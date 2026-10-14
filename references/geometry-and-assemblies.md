@@ -1,0 +1,87 @@
+# Geometry, assemblies, and existing edits
+
+## Resolve the intended object
+
+Start with component ownership and occurrence path, then geometry. Name matching alone is insufficient: bodies and components can share names. A face/edge index is not a stable semantic identity.
+
+A useful selection chain is document -> component definition or occurrence path -> body -> geometric predicate -> expected candidate count. Stop and inspect if the count differs. Do not choose the first match when several are plausible.
+
+For a planar face, consider normal direction, plane location, centroid/point, area, loops, and adjacency. For a cylindrical face, consider axis, radius, axial extent, owner, and adjacency. For a circular edge, consider center, normal, radius, and adjacent faces. Query current surface/curve/evaluator APIs before coding a predicate.
+
+Use tolerances in known units. Exact floating-point equality is unsuitable for geometry. Fusion's modeling tolerance can inform numerical comparisons, but it is not the user's manufacturing tolerance. A tolerance appropriate for finding a plane is different from a specified fit allowance.
+
+## Tokens and topology
+
+`entityToken` provides a handle that can be resolved with `Design.findEntityByToken`. It is not a persistent string identity to compare directly. The same entity can produce different token strings over time. Resolve tokens, then compare entities and verify context/geometry.
+
+Resolution can return zero, one, or multiple entities. A face split by later modeling can make an old token resolve to several faces. Inspect all candidates; do not assume `[0]` is the only intended result. A missing entity may have been deleted or replaced. Re-identify it from design intent before further edits.
+
+`tempId` only remains valid while the document stays open and the owning body remains unchanged. Collection indices and temp IDs cannot be carried across topology changes as a reliable plan. Reacquire references after cuts, splits, fillets, joins, and suppression changes.
+
+Keep raw tokens out of ordinary user-facing reports. Store them in task data only when needed to continue the operation, together with context and intended geometric meaning.
+
+## Coordinate frames
+
+Distinguish:
+
+- Native component coordinates, where a definition's geometry is authored.
+- An occurrence's assembly context, where that definition is instantiated.
+- Root assembly coordinates used for overall positioning/measurement.
+- Sketch-local coordinates and its transform relative to model space.
+
+Use `nativeObject`, `assemblyContext`, and `createForAssemblyContext` as documented to obtain the representation expected by an API. An occurrence's body proxy and the component's native body are not interchangeable for every selection.
+
+Use `Occurrence.transform2`; the older `transform` property is retired in the audited API because it can give incorrect results. Understand the matrix's assembly context before composing nested transforms. A proxy may already embody part of the hierarchy; applying the same transform twice produces wrong coordinates. Check a known point in both frames when uncertain.
+
+Use `Sketch.modelToSketchSpace` and `sketchToModelSpace` when positioning geometry from measured model points. Do not copy a root-space XYZ position directly into a rotated sketch.
+
+An axis-aligned bounding box measures extents in its reported frame. It can overestimate a rotated part's physical width. Use an oriented box or direct geometric measurement when the requested dimension is along a part's own axis. Label the frame in numerical output.
+
+## Measurements
+
+Discover `MeasureManager` for distance, angle, and other relevant operations. Inspect `PhysicalProperties`, body volume/area, and appropriate bounding-box methods. Measurement choices should answer the actual question:
+
+| Question | Suitable evidence |
+|---|---|
+| Overall extents | Bounding box in a stated frame |
+| Hole diameter | Cylindrical geometry or controlling hole parameter |
+| Hole-center spacing | Centers in a common frame |
+| Clearance between parts | Minimum distance/interference in assembly context |
+| Material mass | Physical properties with the actual material/density and accuracy |
+| Wall thickness | Relevant opposing surfaces or documented thickness analysis |
+| Thread identity | Thread metadata and modeled/cosmetic setting |
+
+Do not infer a hole's diameter from a screenshot, mass from volume alone, or collision freedom from appearance. Hidden and suppressed geometry may affect the task differently; include or exclude it deliberately.
+
+Interference and other analysis operations may construct transient inputs or trigger computation. Read their contract and respect the active task's read-only boundary; do not call a mutating analysis workflow under a read-only label.
+
+## Assembly structure and quantities
+
+`allComponents` counts definitions. `allOccurrences` describes instances in the assembly. A component used eight times is one definition and eight occurrences. A native-body total is not a bill-of-materials quantity.
+
+For repeated parts, reuse component definitions when changes should propagate. For a separately editable variant, discover the appropriate copy/new-component workflow. Do not duplicate bodies and call them independent assembled parts unless that is the intended representation.
+
+For nested assemblies, use full occurrence paths. Inspect external-reference status before changing a definition. Editing a linked source, breaking a link, and making a local copy have different consequences. Preserve the requested link behavior and do not silently break references to bypass a restriction.
+
+Ground or constrain the intended reference component. Use joints for intended relative motion; use as-built joints when the parts are already positioned and that is the desired relationship. Discover `JointGeometry`, `Joints`, `AsBuiltJoints`, motion definitions, and limits as needed. Constrain degrees of freedom deliberately; a transform alone is placement, not a persistent mechanical relationship.
+
+Verify rigid/rotational/sliding behavior by inspecting the joint definition and limits. Motion simulation is a separate step if the user asks for it. A successfully created joint does not by itself prove the mechanism has no interference throughout travel.
+
+## Edit existing designs with minimal disruption
+
+1. Identify the controlling feature or parameter and dependent geometry.
+2. Record the current expression/value, feature health, document identity, and timeline marker.
+3. Prefer editing the intended parameter/feature. Inspect dependency parameters before changing shared dimensions.
+4. Read the exact member's timeline requirements. For example, `ExtrudeFeature.setOneSideExtent` requires the marker immediately before that feature; the similarly named input method for a new feature has a different context.
+5. During an authorized edit, position the timeline as required, perform the edit, and restore the appropriate position. For an existing edit with no timeline-length change, preserving the prior marker is usually appropriate. For new appended features, restoring an old integer can accidentally roll back the new work; restore according to intended history position instead.
+6. Recompute only if needed and authorized, then inspect dependent features and resulting geometry.
+
+Do not delete and rebuild an entire component to change a hole or thickness. Do not roll history during an analysis-only task. If a setter requires a timeline position, that fact belongs in the modification plan, not an inspection workaround.
+
+For direct/imported designs, inspect supported face/body edit APIs. Do not claim an original sketch parameter exists if the source contains only B-Rep. Explain when an edit changes direct geometry rather than reconstructing design history.
+
+## Before/after evidence
+
+Choose a compact baseline: target identity, relevant parameter expressions, feature health, body/component counts, and requested measurements. After editing, compare the same properties. Record new warnings separately from existing ones. An unrelated pre-existing underconstrained sketch does not authorize a redesign.
+
+See [verification and recovery](verification-and-recovery.md) for partial scripts, undo, and bounded retries.
