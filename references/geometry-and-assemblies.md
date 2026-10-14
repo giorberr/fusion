@@ -67,6 +67,14 @@ Ground or constrain the intended reference component. Use joints for intended re
 
 Verify rigid/rotational/sliding behavior by inspecting the joint definition and limits. Motion simulation is a separate step if the user asks for it. A successfully created joint does not by itself prove the mechanism has no interference throughout travel.
 
+### Verify assembly behavior, not only input values
+
+In Fusion 2705.1.30, adding repeated occurrences after moving the first occurrence before recording its position produced unexpected transforms. After creating the instances, assign and read back every intended `transform2`; compare world-space body bounds with expected placements and capture pending position changes when appropriate.
+
+Custom joint inputs using construction axes did not produce the intended rotation axes in one live assembly. Read `rotationAxisVector` and test a known angle against actual occurrence transforms. Standard joint directions worked in that case. Joint-motion setters may require timeline rollback even when their short member description omits it. Changing a joint axis also invalidated existing motion links; rebuild only the affected links after correcting the axes and verify the driven parts move correctly.
+
+Ball-joint angle names are not proof of independent Cartesian X/Y/Z rotations. In the observed default configuration, pitch and roll both rotated about Z at zero yaw. Test the coordinate convention before locking an angle. If a mechanism requires two explicit orthogonal pivots, a clearly named, body-free reference component with two revolute joints can represent that motion without adding a manufactured part. Validate this representation against the real mechanism's geometry.
+
 ## Edit existing designs with minimal disruption
 
 1. Identify the controlling feature or parameter and dependent geometry.

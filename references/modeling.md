@@ -16,6 +16,16 @@ For a single part, the root component may be the right owner. For an assembly, u
 
 Use explicit component objects as owners. Activating a component in the UI is not a substitute for verifying which component receives a sketch or feature.
 
+### Observed native-modeling pitfalls
+
+These behaviors were observed in Fusion 2705.1.30; verify the current model rather than assuming every build behaves identically.
+
+- Derive a sketch's local basis with `sketchToModelSpace`. An origin XZ sketch had local +Y along model -Z; angular construction-plane sketches changed their local axes. The plane's name or angle does not establish the sketch coordinate directions.
+- `SketchArcs.addByCenterStartSweep` created a distinct center point even when passed `sketch.originPoint`. Explicitly constrain the returned `centerSketchPoint` coincident to the intended center when that relationship must persist, then inspect `isFullyConstrained`.
+- When points share a coordinate, a horizontal/vertical point constraint to an already constrained point can avoid redundant absolute distance dimensions. Inspect existing constraints before adding either.
+- A negative-direction extrusion's existing distance expression may be signed. Replacing it with a positive expression can reverse the feature and produce a disconnected body while feature health stays healthy. Preserve direction deliberately and verify actual bounds, solid count, and connectivity.
+- A revolve cut in a non-active component failed to find its target until `participantBodies` was explicitly assigned. Set intended participants when the feature supports it; do not depend on active-component visibility.
+
 ## Units and parameters
 
 CAD geometry coordinates and real-valued lengths are in centimeters; real-valued angles are radians. This applies even when the document displays mm or degrees. Area is cm² and volume cm³. Use `UnitsManager.convert` for explicit conversions or `evaluateExpression` for valid expressions. Validate expressions with `isValidExpression`; some conversion/expression errors return a sentinel rather than throwing, so inspect the documented behavior.
