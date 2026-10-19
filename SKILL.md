@@ -93,4 +93,6 @@ The initial audit on 2026-10-13 used Fusion reporting version `2705.1.30`. Read-
 
 Work on 2026-10-19 also exercised supplier STEP assemblies, body-move repair, component pinning, native/STEP/DXF/STL exports, and mesh scale/closedness checks. These observations support the specific guidance in the references; CAM, other advanced operations, engineering performance, and media handoffs still require their own verification.
 
+A read-only test also verified temporary BRep transforms and Boolean intersections on synthetic boxes without changing document state. It did not validate assembly travel. Native add-in controls and custom graphics guidance is documentation-based, not an exercised add-in implementation.
+
 Never carry model names, file IDs, license state, or selections from another chat into a new task. Begin with live context.

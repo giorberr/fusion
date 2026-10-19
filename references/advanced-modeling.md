@@ -14,6 +14,10 @@ For each unfamiliar capability:
 
 An empty broad documentation query is insufficient evidence of absence because of filtering, inheritance, and the five-result limit. Conversely, the installed UI exposing a feature is insufficient evidence of API access. Read exact contracts or authoritative Autodesk documentation.
 
+### Installed support versus online releases
+
+Online [API release notes](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/WhatsNew.htm) can describe newer or preview interfaces that the running installation does not expose. Record `Application.version`, check the exact owning class/member locally, then distinguish presence from an exercised workflow. For example, the October 2026 documentation describes preview drawing and configuration-rule APIs; this does not establish their availability in every installed build. Keep preview-dependent automation version-specific and recheck its contracts after upgrades.
+
 ## Surface modeling
 
 Use surface construction when the design calls for open surfaces, controlled continuity, a complex outer skin, or geometry that will later be thickened/stitched. Discover the applicable extrusion, revolve, sweep, loft, patch, stitch, trim, extend, replace-face, and thicken collections; do not assume every one exists in the current release.

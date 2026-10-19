@@ -79,6 +79,14 @@ Do not infer a hole's diameter from a screenshot, mass from volume alone, or col
 
 Interference and other analysis operations may construct transient inputs or trigger computation. Read their contract and respect the active task's read-only boundary; do not call a mutating analysis workflow under a read-only label.
 
+### Test alternate poses with temporary geometry
+
+For clearance checks that should preserve assembly placement, discover [TemporaryBRepManager](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_TemporaryBRepManager.htm): `copy`, `transform`, and `booleanOperation` operate on geometry outside the document. Copy the relevant bodies and express each candidate pose in one verified coordinate frame. Avoid applying an occurrence transform twice to geometry already in assembly context.
+
+Use conservative bounding-box separation to discard distant pairs, then intersect candidate solids. A positive intersection volume establishes overlap; convert internal cubic centimeters explicitly when reporting cubic millimeters. Zero volume does not establish a specified clearance or rule out face contact. The [Boolean contract](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_TemporaryBRepManager_booleanOperation.htm) requires a temporary target body and modifies it on success; use a fresh copy for each test. A false return means failure, not clearance.
+
+On 2026-10-19, a read-only script tested two temporary 20 mm cubes at seven offsets, with expected intersection volumes and unchanged modified state, timeline, and occurrence count. This verified transient geometry only. Real assembly frame handling, arbitrary topology, contact cases, and continuous travel still need their own checks; sampled poses alone do not prove an entire path is clear.
+
 ## Assembly structure and quantities
 
 `allComponents` counts definitions. `allOccurrences` describes instances in the assembly. A component used eight times is one definition and eight occurrences. A native-body total is not a bill-of-materials quantity.

@@ -121,6 +121,16 @@ When diagnosing a stall, compare a minimal script, collection count, names-only 
 
 For a known target, look it up directly and verify its identity. For broader discovery, list names/paths first, then retrieve needed part numbers. Paginate metadata reads; for a complete BOM, read each reused component definition's metadata once and join it back to its occurrences using verified component identity. Replacing a comprehension with an indexed loop alone does not remove expensive property reads. Avoid overlapping long script requests when measuring latency.
 
+### Main-thread work and background jobs
+
+Do not move slow Fusion API calls onto Python worker threads. Autodesk's [threading guidance](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/Threading_UM.htm) requires Fusion model and UI work on the main thread. Workers can handle non-Fusion network/file access or calculations, then notify a registered main-thread handler through `Application.fireCustomEvent`. Pass plain data rather than accessing Fusion objects from the worker. Avoid permanent `doEvents` polling loops. For an MCP/add-in workflow, defer model changes while an unrelated command dialog is active instead of copying a sample that cancels the user's command. Unregister task-owned events when stopping.
+
+## Reusable desktop commands and overlays
+
+When the user requests reusable controls, a desktop add-in can wrap tested operations in native commands with validated inputs, or an HTML palette. Start from Autodesk's [Python add-in template](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/PythonTemplate_UM.htm); discover exact command/input/event members before implementation. Retain Python event handlers for their required lifetime, keep preview and committed execution distinct, and clean up task-owned controls and handlers on stop. Test input validation, cancel/preview behavior, repeated execution, and unload/reload. Add-in installation and UI changes are separate from a read-only inspection request.
+
+For visual guides, discover [custom graphics](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/CustomGraphics_UM.htm) through `Component.customGraphicsGroups`. Lines, text, meshes, or body graphics can show travel envelopes, labels, and interference highlights without adding manufactured BRep bodies. Treat creating/updating these overlays as a UI change, even when the underlying geometry remains untouched. Keep a reference to the task's own group and delete only that group during cleanup; sample code that deletes the first existing graphics group can remove unrelated overlays. Graphics are presentation, not evidence of collision freedom.
+
 ## Results
 
 Keep image content as images; never print base64 into chat. Parse JSON text when appropriate. Check MCP `isError` and decoded `success`/`error`: a fulfilled call can still report failure. Script JSON output was observed as another JSON string inside `message`; parse that second level if the script intentionally printed one JSON object. If the script prints multiple stage records, use consistent JSON Lines and parse each line; the combined message is not one JSON object. One final JSON object is simplest for ordinary inspection.
