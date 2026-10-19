@@ -36,12 +36,14 @@ In a direct design, the parametric timeline may not be available. Inspect body g
 ## When a script fails
 
 1. Preserve the exact error/traceback and determine whether failure occurred before or after mutation began.
-2. Read the active document, command, relevant objects, and timeline. Scripts may have partially succeeded; never assume automatic rollback.
+2. Read the active document, command, relevant objects, and timeline. Scripts may have partially succeeded or the MCP transaction may have rolled back; establish which happened from live state.
 3. Compare with the baseline and identify completed task-owned steps.
 4. Choose a targeted correction, continuation, or rollback based on actual state. Do not rerun the complete creation script blindly.
 5. Read the failing API's current member contract and correct the specific issue. Verify the result of the corrected stage.
 
 Do not assume one script equals one undo transaction. The MCP update tool undoes the most recent committed transaction; its scope is not proven to match an arbitrary script. If the user interacted between calls, the newest operation may be theirs.
+
+A failed postcondition assertion was observed to roll back a newly added Move feature. Preserve the error and read back feature count and geometry before retrying; neither a feature-creation return inside the script nor a failure response proves its final committed state.
 
 Undo/redo must be deliberate and within the user's requested task. Read `canUndo`/`canRedo` in responses and stop on failure. Never issue a chain of undo calls in the hope of reaching the original state. For targeted cleanup, delete only clearly identified task-created entities whose dependency effects are understood.
 
@@ -52,6 +54,8 @@ Undo/redo must be deliberate and within the user's requested task. Read `canUndo
 | No Design product | Document product types; a drawing/CAM context may not be a CAD Design |
 | Command blocks execution | `activeCommand`; keep user dialog state intact |
 | Wrong object/null selection | Document/component context, token resolution, candidate count |
+| Part moved but occurrence transform is unchanged | Native body geometry, assembly proxies, base features, and body-move features |
+| Rotation is correct but translation is wrong | Active component, matrix frame, and native-to-root conjugation |
 | No closed profile | Sketch loops, construction curves, duplicate curves, gaps, compute state |
 | Overconstraint | Existing constraints and driving/driven dimensions; remove only the mistaken task constraint |
 | Cut misses body | Sketch normal, extent direction, frame, body participants |
@@ -69,6 +73,8 @@ Do not reduce requested dimensions, simplify geometry, change manufacturing inte
 ## Bounded retries
 
 A retry should follow new evidence or a specific correction. If the same failure recurs with the same cause, stop repeating that approach and investigate a different supported path. If no path exists without missing user input or capability, finish independent work and report the concrete blocker. Do not introduce arbitrary confirmation steps for routine repairs already within scope.
+
+If the user interrupts a tool wait, the Fusion operation may still finish. A missing orchestration/wait handle is not proof that the model operation was canceled. Before resuming mutations, read document identity, active command, the relevant feature count, and actual geometry; continue from that state instead of replaying the interrupted script.
 
 ## Recompute and temporary state
 

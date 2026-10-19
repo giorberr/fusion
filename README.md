@@ -51,6 +51,7 @@ These guides describe workflows and capability discovery, not a guarantee that e
 | MCP tools, API discovery, document identity, and script execution | [MCP operation and scripting](references/mcp-and-scripting.md) |
 | Sketches, parameters, solid features, holes, threads, and patterns | [Parametric modeling](references/modeling.md) |
 | Geometry selection, measurements, assemblies, joints, and existing edits | [Geometry and assemblies](references/geometry-and-assemblies.md) |
+| Purchased components, stock framing, supplier CAD, and McMaster parts lists | [Catalog parts and assemblies](references/catalog-parts.md) |
 | Surfaces, meshes, sheet metal, freeform, configurations, and capability discovery | [Advanced modeling](references/advanced-modeling.md) |
 | Manufacturing setups, operations, toolpaths, and NC output | [CAM](references/cam.md) |
 | Schematics, boards, libraries, connectivity, and stored ERC/DRC information | [Electronics inspection](references/electronics.md) |
@@ -70,6 +71,8 @@ To use it, read the source and submit the **complete source text** as `object.sc
 
 Adjust the constants in the submitted source to set document guards, page offsets, `DETAIL_LIMIT`, geometry detail, or entity-token output. The inspector does not save, recompute, change the camera, or move the timeline. Its body counts describe native component definitions, not assembly quantities.
 
+Occurrence rows include part numbers and pin state. Enable `INCLUDE_OCCURRENCE_BOUNDS` when diagnosing a misplaced member; this reports actual geometry bounds in occurrence assembly context, which can change even when its occurrence transform has not.
+
 ## Safety and scope
 
 - Preserve existing documents, design intent, history, and unrelated user work.
@@ -83,6 +86,6 @@ Adjust the constants in the submitted source to set document guards, page offset
 
 The initial audit on **2026-10-13** used Fusion reporting version **2705.1.30**. It exercised read-only CAD inspection, API documentation queries, document discovery, screenshots, parameters, feature health, thread inspection, and token resolution.
 
-All 50 advertised electronics schemas were read, but populated electronics data was unavailable. Mutation recipes, CAM execution, advanced modeling, exports, and media workflows were not validated end to end during that audit and require task-specific runtime verification.
+All 50 advertised electronics schemas were read, but populated electronics data was unavailable. Work on **2026-10-19** additionally exercised supplier STEP assemblies, body-move repair, pinning, native/STEP/DXF/STL exports, and mesh scale/closedness checks. CAM execution, other advanced operations, engineering performance, and media workflows still require task-specific runtime verification.
 
 Capabilities depend on the installed Fusion API, active document and product, connected MCP tools, and entitlements. The skill instructs the agent to discover current support and report precise limitations rather than inventing unavailable operations. See [`SKILL.md`](SKILL.md) for the full workflow and validation scope.

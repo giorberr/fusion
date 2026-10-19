@@ -35,6 +35,21 @@ An export path is on the host where Fusion runs. Do not assume it is the agent's
 
 Verify export success and file existence/size when accessible. For scale-critical or manufacturing output, inspect units and relevant geometry through a format reader or isolated reopen when available and authorized. A successful `execute` return only proves the export operation reported success.
 
+### Mesh and manufacturing unit checks
+
+For the tested Fusion STL exporter, `STLExportOptions.unitType` uses `adsk.fusion.DistanceUnits`, for example:
+
+```python
+options = design.exportManager.createSTLExportOptions(component, output_path)
+options.unitType = adsk.fusion.DistanceUnits.MillimeterDistanceUnits
+```
+
+Do not substitute `MeshUnits.MillimeterMeshUnit` or a raw integer because its name/value looks similar. That substitution produced an STL ten times the intended size even though export succeeded. Recheck the current option type when using another mesh API.
+
+STL does not encode a unit declaration. Parse the exported vertices or reopen the mesh with an explicit unit choice and compare its numeric extents to known CAD dimensions. For printable solids, also check closedness/non-manifold edges; neither scale nor manifoldness alone proves printability. Check STEP unit declarations and DXF `$INSUNITS` when manufacturing dimensions depend on them.
+
+An outline-and-drill DXF does not communicate all of a plate's machining requirements. Supply tapping, countersink/counterbore side and dimensions, stock thickness, and other necessary operations in a drawing or companion manufacturing notes. Distinguish tap-drill geometry from finished threads and a nominal countersink from a modeled finished feature.
+
 The audited `Sketch.saveAsDXF` member was marked retired. Discover the supported export-manager or current sketch route instead of copying it into new automation. A manually projected outline is not a true sheet-metal flat pattern.
 
 ## Screenshots and camera
@@ -46,6 +61,8 @@ The audited `Sketch.saveAsDXF` member was marked retired. Discover the supported
 `current` preserves the viewing direction. Other directions instruct the tool to change the camera before capture. Use them during authorized visual review when appropriate; use `current` for an inspection that must preserve UI state. Do not state the camera was preserved if a standard view was requested.
 
 Screenshots show the graphics viewport, not necessarily the whole Fusion UI or feature tree. Use active-command reads for dialog state and API reads for model structure. Image blocks can be displayed directly; do not expose base64 strings.
+
+When saving a viewport immediately after a camera change, a smooth transition can capture an intermediate view. For a deterministic scripted capture, set `camera.isSmoothTransition = False`, assign the intended camera/fit, refresh the viewport, and inspect the resulting image.
 
 Use views that make the requested result reviewable: silhouette, relevant interfaces, hole placement, or assembly arrangement. A view is supporting evidence, not a dimensional inspection.
 

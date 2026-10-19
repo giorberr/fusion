@@ -21,6 +21,7 @@ The MCP is a small gateway to a large application: most CAD creation, measuremen
 |---|---|
 | Parts, sketches, parameters, solid features, patterns, holes, threads | [Parametric modeling](references/modeling.md) |
 | Feature edits, measurement, face/edge selection, assemblies, joints | [Geometry and assemblies](references/geometry-and-assemblies.md) |
+| Purchased components, stock framing, supplier CAD, and McMaster parts lists | [Catalog parts and assemblies](references/catalog-parts.md) |
 | Surfaces, meshes, sheet metal, freeform, configurations, unfamiliar capabilities | [Advanced modeling](references/advanced-modeling.md) |
 | Manufacture workspace, setups, tools, toolpaths, NC output | [CAM](references/cam.md) |
 | Schematics, PCB, libraries, connectivity, variants, ERC/DRC inspection | [Electronics](references/electronics.md) |
@@ -82,10 +83,14 @@ Read `scripts/inspect_design.py` and send its source as `object.script` to `fusi
 
 Adjust its constants in the submitted source for document guards, pagination, and geometry detail. It reports identity, product types, units, counts, parameters, occurrence transforms, and health. It never saves, recomputes, changes the camera, or moves the timeline. Detail pages report their total and whether more rows exist. Body counts cover native definitions, not assembly quantities.
 
+For a misplaced assembly member, compare its occurrence transform with its actual geometry. The inspector includes part numbers and pin state; enable `INCLUDE_OCCURRENCE_BOUNDS` for bounds in occurrence assembly context. Leave this off for a cheap structural read of a large assembly.
+
 Use targeted reads for large assemblies or small edits; running a full inspector is not mandatory every time.
 
 ## Validation scope
 
-The initial audit on 2026-10-13 used Fusion reporting version `2705.1.30`. Read-only CAD inspection, documentation queries, document discovery, screenshots, parameters, health, thread inspection, and token resolution were exercised. All 50 electronics schemas were read, but actual electronics rows were unavailable. Mutation recipes, CAM, advanced modeling, exports, and media guidance require runtime verification; they are not claims of completed end-to-end tests.
+The initial audit on 2026-10-13 used Fusion reporting version `2705.1.30`. Read-only CAD inspection, documentation queries, document discovery, screenshots, parameters, health, thread inspection, and token resolution were exercised. All 50 electronics schemas were read, but actual electronics rows were unavailable.
+
+Work on 2026-10-19 also exercised supplier STEP assemblies, body-move repair, component pinning, native/STEP/DXF/STL exports, and mesh scale/closedness checks. These observations support the specific guidance in the references; CAM, other advanced operations, engineering performance, and media handoffs still require their own verification.
 
 Never carry model names, file IDs, license state, or selections from another chat into a new task. Begin with live context.

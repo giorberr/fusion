@@ -20,6 +20,7 @@ OCCURRENCE_OFFSET = 0
 PARAMETER_OFFSET = 0
 TIMELINE_OFFSET = 0
 INCLUDE_GEOMETRY = True
+INCLUDE_OCCURRENCE_BOUNDS = False
 INCLUDE_ENTITY_TOKENS = False
 
 
@@ -216,6 +217,14 @@ def inspect_design():
         }
         if INCLUDE_ENTITY_TOKENS:
             row["entity_token"] = occ.entityToken
+        row["part_number"] = occ.component.partNumber
+        row["is_grounded"] = occ.isGrounded
+        if INCLUDE_OCCURRENCE_BOUNDS:
+            box = occ.boundingBox
+            if box:
+                row["bounds_frame"] = "occurrence assembly context"
+                row["bounds_min_mm"] = [units.convert(v, "cm", "mm") for v in box.minPoint.asArray()]
+                row["bounds_max_mm"] = [units.convert(v, "cm", "mm") for v in box.maxPoint.asArray()]
         occurrence_rows.append(row)
     parameters = design.allParameters
     parameter_rows = []

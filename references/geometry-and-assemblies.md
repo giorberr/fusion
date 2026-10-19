@@ -6,6 +6,8 @@ Start with component ownership and occurrence path, then geometry. Name matching
 
 A useful selection chain is document -> component definition or occurrence path -> body -> geometric predicate -> expected candidate count. Stop and inspect if the count differs. Do not choose the first match when several are plausible.
 
+For a few known members, reacquire the already observed name/path within its parent occurrence collection, for example with `Occurrences.itemByName`, then verify part number and ownership. Avoid enumerating the entire `root.allOccurrences` hierarchy just to recover a known target; reserve a full inventory for tasks that need it.
+
 For a planar face, consider normal direction, plane location, centroid/point, area, loops, and adjacency. For a cylindrical face, consider axis, radius, axial extent, owner, and adjacency. For a circular edge, consider center, normal, radius, and adjacent faces. Query current surface/curve/evaluator APIs before coding a predicate.
 
 Use tolerances in known units. Exact floating-point equality is unsuitable for geometry. Fusion's modeling tolerance can inform numerical comparisons, but it is not the user's manufacturing tolerance. A tolerance appropriate for finding a plane is different from a specified fit allowance.
@@ -37,6 +39,26 @@ Use `Sketch.modelToSketchSpace` and `sketchToModelSpace` when positioning geomet
 
 An axis-aligned bounding box measures extents in its reported frame. It can overestimate a rotated part's physical width. Use an oriented box or direct geometric measurement when the requested dimension is along a part's own axis. Label the frame in numerical output.
 
+### Diagnose a misplaced assembly member
+
+Compare the occurrence's `transform2`, its native body geometry, and its body proxies or bounds in root assembly context. An unchanged occurrence transform does not prove the part stayed in place: a body move can change the geometry inside the component. Absence of a Move feature also does not establish unchanged geometry, especially with imported/base-feature bodies.
+
+Restore an occurrence placement when the occurrence moved. Restore the affected body geometry or controlling feature when the bodies moved. Repeated instances share those body edits, so check every affected instance before changing a definition. Prefer a known baseline or supplier geometry to guessing a pose from a screenshot. Symmetric bounding boxes cannot uniquely establish orientation; use mounting points, faces, or axes as needed.
+
+### Free-move feature frame conversion
+
+Discover `MoveFeatures.createInput2`, `MoveFeatureInput.defineAsFreeMove`, and `MoveFeatureFreeMoveDefinition.transform`. A repair tested on 2026-10-19 with the root component active showed that native bodies and a component-owned feature collection did **not** make the supplied free-move matrix local to that component. A local correction applied as a root-space matrix restored orientation but left a large translation error. The resulting definition's transform getter also exposed a local representation, so matrix readback alone did not prove the correct assembled position.
+
+Identify the input matrix's frame for the active context before mutation. Using column-vector notation, if `T` maps component coordinates to root and `M_local` is a local correction, the equivalent root correction is:
+
+```text
+M_root = T * M_local * inverse(T)
+```
+
+Apply the matrix once in the expected frame, then verify actual assembled geometry. A correct rotation with a large residual offset is a reason to audit frame conversion before attributing the result to cached bounds or rounding.
+
+To edit an existing free-move definition, its documented setter requires `feature.timelineObject.rollTo(True)` before setting `feature.definition.transform`. Restore the intended timeline position afterward and recompute when required by that edit. Reacquire occurrences/bodies after recomputation. Prefer correcting the identified feature to stacking additional compensation moves.
+
 ## Measurements
 
 Discover `MeasureManager` for distance, angle, and other relevant operations. Inspect `PhysicalProperties`, body volume/area, and appropriate bounding-box methods. Measurement choices should answer the actual question:
@@ -67,9 +89,13 @@ Ground or constrain the intended reference component. Use joints for intended re
 
 Verify rigid/rotational/sliding behavior by inspecting the joint definition and limits. Motion simulation is a separate step if the user asks for it. A successfully created joint does not by itself prove the mechanism has no interference throughout travel.
 
+`Occurrence.isGrounded` gets/sets whether an occurrence is pinned. Pin fixed members when that matches the assembly intent and verify the returned state. Pinning prevents ordinary occurrence dragging; it does not lock edits to bodies inside the component or replace joints between moving members.
+
 ### Verify assembly behavior, not only input values
 
 In Fusion 2705.1.30, adding repeated occurrences after moving the first occurrence before recording its position produced unexpected transforms. After creating the instances, assign and read back every intended `transform2`; compare world-space body bounds with expected placements and capture pending position changes when appropriate.
+
+For a nested moving member, reacquire the occurrence proxy through the intended root assembly instance. Changing the native child occurrence was observed not to update a position override in that instance, while setting the root-context child proxy did. Verify the member's assembled geometry after assignment. For repeated fixed members whose positions revert when snapshots are captured, test creating each occurrence with its intended initial matrix instead of initially creating every instance at identity.
 
 Custom joint inputs using construction axes did not produce the intended rotation axes in one live assembly. Read `rotationAxisVector` and test a known angle against actual occurrence transforms. Standard joint directions worked in that case. Joint-motion setters may require timeline rollback even when their short member description omits it. Changing a joint axis also invalidated existing motion links; rebuild only the affected links after correcting the axes and verify the driven parts move correctly.
 
