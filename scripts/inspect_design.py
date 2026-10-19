@@ -20,6 +20,7 @@ OCCURRENCE_OFFSET = 0
 PARAMETER_OFFSET = 0
 TIMELINE_OFFSET = 0
 INCLUDE_GEOMETRY = True
+INCLUDE_PART_NUMBERS = False
 INCLUDE_OCCURRENCE_BOUNDS = False
 INCLUDE_ENTITY_TOKENS = False
 
@@ -217,7 +218,8 @@ def inspect_design():
         }
         if INCLUDE_ENTITY_TOKENS:
             row["entity_token"] = occ.entityToken
-        row["part_number"] = occ.component.partNumber
+        if INCLUDE_PART_NUMBERS:
+            row["part_number"] = occ.component.partNumber
         row["is_grounded"] = occ.isGrounded
         if INCLUDE_OCCURRENCE_BOUNDS:
             box = occ.boundingBox

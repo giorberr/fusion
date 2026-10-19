@@ -71,7 +71,7 @@ To use it, read the source and submit the **complete source text** as `object.sc
 
 Adjust the constants in the submitted source to set document guards, page offsets, `DETAIL_LIMIT`, geometry detail, or entity-token output. The inspector does not save, recompute, change the camera, or move the timeline. Its body counts describe native component definitions, not assembly quantities.
 
-Occurrence rows include part numbers and pin state. Enable `INCLUDE_OCCURRENCE_BOUNDS` when diagnosing a misplaced member; this reports actual geometry bounds in occurrence assembly context, which can change even when its occurrence transform has not.
+Occurrence rows include pin state. Enable `INCLUDE_PART_NUMBERS` for catalog identifiers; those getters can be much slower than names. Enable `INCLUDE_OCCURRENCE_BOUNDS` when diagnosing a misplaced member; this reports actual geometry bounds in occurrence assembly context, which can change even when its occurrence transform has not.
 
 ## Safety and scope
 

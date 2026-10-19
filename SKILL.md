@@ -83,7 +83,7 @@ Read `scripts/inspect_design.py` and send its source as `object.script` to `fusi
 
 Adjust its constants in the submitted source for document guards, pagination, and geometry detail. It reports identity, product types, units, counts, parameters, occurrence transforms, and health. It never saves, recomputes, changes the camera, or moves the timeline. Detail pages report their total and whether more rows exist. Body counts cover native definitions, not assembly quantities.
 
-For a misplaced assembly member, compare its occurrence transform with its actual geometry. The inspector includes part numbers and pin state; enable `INCLUDE_OCCURRENCE_BOUNDS` for bounds in occurrence assembly context. Leave this off for a cheap structural read of a large assembly.
+For a misplaced assembly member, compare its occurrence transform with its actual geometry. The inspector includes pin state; enable `INCLUDE_PART_NUMBERS` for catalog identifiers and `INCLUDE_OCCURRENCE_BOUNDS` for bounds in occurrence assembly context. Leave these optional reads off when a structural read is sufficient; part-number getters can be much slower than names.
 
 Use targeted reads for large assemblies or small edits; running a full inspector is not mandatory every time.
 

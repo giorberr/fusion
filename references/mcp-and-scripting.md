@@ -113,6 +113,14 @@ Let exceptions propagate. Do not copy the common sample wrapper `try/except: ui.
 
 Build and validate feature input objects before adding features. Check false/null returns. Print names, expressions, counts, measurements with units, relevant tokens, and health. Do not print wrapper objects, secrets, entire material libraries, or huge topology dumps.
 
+## Slow reads and request timeouts
+
+A short script is not necessarily a fast request. On 2026-10-19, listing names and `component.partNumber` for 136 top-level occurrences took 79 seconds end to end. Listing all 136 names without part numbers took 0.05 seconds. Five indexed metadata rows took 2.54 seconds inside Fusion but 38.8 seconds end to end during overlapping requests. The timings identify expensive metadata reads in that session; they are not universal API costs or proof of a configured timeout threshold.
+
+When diagnosing a stall, compare a minimal script, collection count, names-only inventory, and a small metadata page. Use `time.perf_counter()` inside the script and separately measure the full tool request so API execution is not confused with queue/bridge/response overhead. A small output can still take a long time to produce.
+
+For a known target, look it up directly and verify its identity. For broader discovery, list names/paths first, then retrieve needed part numbers. Paginate metadata reads; for a complete BOM, read each reused component definition's metadata once and join it back to its occurrences using verified component identity. Replacing a comprehension with an indexed loop alone does not remove expensive property reads. Avoid overlapping long script requests when measuring latency.
+
 ## Results
 
 Keep image content as images; never print base64 into chat. Parse JSON text when appropriate. Check MCP `isError` and decoded `success`/`error`: a fulfilled call can still report failure. Script JSON output was observed as another JSON string inside `message`; parse that second level if the script intentionally printed one JSON object. If the script prints multiple stage records, use consistent JSON Lines and parse each line; the combined message is not one JSON object. One final JSON object is simplest for ordinary inspection.

@@ -8,6 +8,8 @@ A useful selection chain is document -> component definition or occurrence path 
 
 For a few known members, reacquire the already observed name/path within its parent occurrence collection, for example with `Occurrences.itemByName`, then verify part number and ownership. Avoid enumerating the entire `root.allOccurrences` hierarchy just to recover a known target; reserve a full inventory for tasks that need it.
 
+If the target is not yet known, a names/path inventory can be fast even when reading every `component.partNumber` is slow. Discover candidates with cheap identifiers, then read catalog metadata only for those candidates. See the timing guidance in [MCP operation and scripting](mcp-and-scripting.md#slow-reads-and-request-timeouts).
+
 For a planar face, consider normal direction, plane location, centroid/point, area, loops, and adjacency. For a cylindrical face, consider axis, radius, axial extent, owner, and adjacency. For a circular edge, consider center, normal, radius, and adjacent faces. Query current surface/curve/evaluator APIs before coding a predicate.
 
 Use tolerances in known units. Exact floating-point equality is unsuitable for geometry. Fusion's modeling tolerance can inform numerical comparisons, but it is not the user's manufacturing tolerance. A tolerance appropriate for finding a plane is different from a specified fit allowance.
