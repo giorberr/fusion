@@ -14,6 +14,20 @@ For a planar face, consider normal direction, plane location, centroid/point, ar
 
 Use tolerances in known units. Exact floating-point equality is unsuitable for geometry. Fusion's modeling tolerance can inform numerical comparisons, but it is not the user's manufacturing tolerance. A tolerance appropriate for finding a plane is different from a specified fit allowance.
 
+### Surface normals are not necessarily outward face normals
+
+`face.geometry` describes the underlying surface. Its plane normal can point in the same direction on both top and bottom faces. `face.isParamReversed` indicates reversal relative to that surface. For an oriented face normal, use `ok, normal = face.evaluator.getNormalAtPoint(face.pointOnFace)` and check `ok`; do not apply the reversal again to an already face-oriented evaluator normal. This distinction was reproduced on opposite faces of a temporary solid box in a read-only test on `2705.1.30`, without changing the document. An outward interpretation assumes a valid solid; open surfaces need their own orientation convention.
+
+To identify a slab's upper/lower cap, first filter planar candidates whose normals are parallel to the intended axis (absolute dot product with tolerance), then compare centroid projection along that axis in a common frame. Verify cap positions against body bounds and the intended area/loops; do not just sort *all* planar faces and take the extremes. Stepped geometry can have several plausible caps, and equal-height candidates require disambiguation. A face centroid can lie in a hole, so use `pointOnFace`, not the centroid, for normal evaluation.
+
+A healthy fillet can still be on the wrong edge. Record the selected face/edge location and adjacency before finishing, then inspect the resulting transition at the intended side, bounds, and volume afterward. Bounds or volume alone may not distinguish symmetric top and bottom mistakes.
+
+### Tangent boundaries after fillets
+
+A reported `FILLET_NO_EDGE_FOUND` occurred when a second fillet targeted the tangent boundary left by an earlier roundover. Inspect `edge.faces`, the preceding feature, and local face normals near the shared edge; `tangentiallyConnectedFaces` can help identify smooth adjacency. A `Plane` + `NurbsSurface` pair is only a clue: a NURBS surface is not necessarily a fillet and those types do not establish tangency. Also check edge validity, occurrence context, radius feasibility, and whether the original sharp edge was replaced.
+
+When geometry permits, select the intended sharp boundaries before finishing and use multiple constant-radius edge sets in one fillet input for differing radii. This avoids depending on newly tangent boundaries, but is not a guarantee that all fillets can be combined. If chaining is intentional, reacquire the changed topology and validate the next sharp-edge selection rather than reusing a stale edge.
+
 ## Tokens and topology
 
 `entityToken` provides a handle that can be resolved with `Design.findEntityByToken`. It is not a persistent string identity to compare directly. The same entity can produce different token strings over time. Resolve tokens, then compare entities and verify context/geometry.
@@ -40,6 +54,14 @@ Use `Occurrence.transform2`; the older `transform` property is retired in the au
 Use `Sketch.modelToSketchSpace` and `sketchToModelSpace` when positioning geometry from measured model points. Do not copy a root-space XYZ position directly into a rotated sketch.
 
 An axis-aligned bounding box measures extents in its reported frame. It can overestimate a rotated part's physical width. Use an oriented box or direct geometric measurement when the requested dimension is along a part's own axis. Label the frame in numerical output.
+
+### Missing or point-like occurrence bounds
+
+A user-reported `2705.1.30` session returned `[0, 0, 0]`–`[0, 0, 0]` immediately after creating nonempty occurrences, while native body `preciseBoundingBox` and occurrence `transform2` were valid. This is a reported cache/context symptom, not a guaranteed creation behavior. A zero box does not prove emptiness. Check actual native bodies and transforms; compare `Occurrence.preciseBoundingBox` or body proxies if appropriate. Do not recompute or change UI state merely to make a read-only report work.
+
+The inspector's optional occurrence-bounds read falls back on absent, nonfinite, inverted, or point-like boxes. It transforms **all eight corners** of each native B-Rep body's box exactly once using that occurrence's `transform2`, and unions the results, including child occurrence proxies in the same assembly context. Do not apply this transform to proxy geometry that is already transformed, or multiply parent transforms again onto root-context proxies. A valid planar box has one zero extent and must not be rejected as empty.
+
+The fallback is explicitly labeled as a conservative enclosure of B-Rep bodies, not a tight world-space box or a manufacturing dimension. Rotated curved parts can be overestimated. Meshes and other geometry are excluded; missing body boxes are counted and partial results flagged. Nested transforms need context-specific verification. A plausible but stale nonzero API box will not trigger this fallback; compare actual geometry when diagnosing a discrepancy.
 
 ### Diagnose a misplaced assembly member
 

@@ -4,7 +4,7 @@ An agent skill for creating, inspecting, editing, troubleshooting, and exporting
 
 The skill turns design requests into editable geometry, discovers the installed API before using it, and verifies results with measurements and feature health rather than relying on screenshots alone. It applies to Autodesk Fusion, not Blackmagic Fusion or other products with the same name.
 
-This repository contains agent instructions, reference guides, and an inspection script. It does **not** include Autodesk Fusion, an MCP server, or a standalone Python application.
+This repository contains agent instructions, reference guides, and read-only inspection scripts. It does **not** include Autodesk Fusion, an MCP server, or a standalone Python application.
 
 ## Requirements
 
@@ -12,7 +12,7 @@ This repository contains agent instructions, reference guides, and an inspection
 - A connected Fusion MCP server exposing document discovery, API documentation, and Python script execution. Additional workflows depend on the tools available in that server.
 - An agent client that can load `SKILL.md` skills and use the connected MCP tools.
 
-The bundled Python script requires Fusion's embedded Python environment and its `adsk` modules. It cannot be run as a normal local Python CLI.
+The bundled inspection scripts require Fusion's embedded Python environment and its `adsk` modules. They cannot be run as normal local Python CLIs; the local regression tests use mocked API objects.
 
 ## Installation
 
@@ -71,7 +71,13 @@ To use it, read the source and submit the **complete source text** as `object.sc
 
 Adjust the constants in the submitted source to set document guards, page offsets, `DETAIL_LIMIT`, geometry detail, or entity-token output. The inspector does not save, recompute, change the camera, or move the timeline. Its body counts describe native component definitions, not assembly quantities.
 
-Occurrence rows include pin state. Enable `INCLUDE_PART_NUMBERS` for catalog identifiers; those getters can be much slower than names. Enable `INCLUDE_OCCURRENCE_BOUNDS` when diagnosing a misplaced member; this reports actual geometry bounds in occurrence assembly context, which can change even when its occurrence transform has not.
+Occurrence rows include pin state. Enable `INCLUDE_PART_NUMBERS` for catalog identifiers; those getters can be much slower than names. Enable `INCLUDE_OCCURRENCE_BOUNDS` when diagnosing a misplaced member. Missing, invalid, or point-like occurrence boxes trigger a conservative fallback from transformed native B-Rep boxes, including descendant occurrences. Output identifies the source, scope, missing bodies, and excluded meshes; it must not be mistaken for tight geometric dimensions. A zero API box does not prove an empty part.
+
+### Compact state probe
+
+[`scripts/state_probe.py`](scripts/state_probe.py) is a smaller before/after check for uncertain script outcomes. Submit its complete source with `readOnly: true`, just like the inspector. It reports document identity and saved/modified flags, active command ID, component definitions (including root), native B-Rep bodies, occurrences, user parameters, and timeline count/marker. Optional guards ensure it inspects the intended document.
+
+Whole-call rollback after an uncaught exception has been observed in this integration. Probe whether work committed before retrying; identical counts alone do not prove unchanged geometry. Keep critical safety checks inside mutation stages, but run independent final acceptance checks in a subsequent read-only call.
 
 ## Safety and scope
 
@@ -79,13 +85,25 @@ Occurrence rows include pin state. Enable `INCLUDE_PART_NUMBERS` for catalog ide
 - Use explicit read-only execution for inspection; model edits, exports, saves, and UI changes are not inspection.
 - Guard the target document and select geometry by ownership and geometric properties rather than collection order alone.
 - Handle units explicitly: CAD internal lengths are centimeters and angles are radians; electronics uses its own grid-unit conventions.
-- Inspect partial state before retrying a failed script. Do not assume a script is one undo transaction.
+- Determine whether a failed script rolled back or left partial state before retrying. Do not assume a script is one undo transaction.
 - Treat generated toolpaths and NC output as distinct from simulated or proven machine execution.
+
+## Local tests
+
+Run the stdlib regression suite without installing Fusion's Python modules:
+
+```sh
+python -B -m unittest discover -s tests -v
+```
+
+The tests use mock API objects to cover document guards, probe counts, bounds validation, rotated/nested transforms, and incomplete geometry reporting. They do not validate Fusion's transaction engine or modeling solver.
 
 ## Validation and limitations
 
 The initial audit on **2026-10-13** used Fusion reporting version **2705.1.30**. It exercised read-only CAD inspection, API documentation queries, document discovery, screenshots, parameters, feature health, thread inspection, and token resolution.
 
 All 50 advertised electronics schemas were read, but populated electronics data was unavailable. Work on **2026-10-19** additionally exercised supplier STEP assemblies, body-move repair, pinning, native/STEP/DXF/STL exports, and mesh scale/closedness checks. CAM execution, other advanced operations, engineering performance, and media workflows still require task-specific runtime verification.
+
+The **2026-10-20** review added live API/binding checks and read-only tests for face-normal orientation, the state probe, and conservative bounds against five live occurrence body proxies. Reported rollback, immediate zero occurrence boxes, ellipse-center behavior, and body-name changes were not independently reproduced with mutation tests.
 
 Capabilities depend on the installed Fusion API, active document and product, connected MCP tools, and entitlements. The skill instructs the agent to discover current support and report precise limitations rather than inventing unavailable operations. See [`SKILL.md`](SKILL.md) for the full workflow and validation scope.

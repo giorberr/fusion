@@ -14,7 +14,7 @@ For a new document, discover `adsk.core.Documents.add` and `DocumentTypes.Fusion
 
 For a single part, the root component may be the right owner. For an assembly, use components per logical part. Discover `Occurrences.addNewComponent` and `Matrix3D.create` for a new local component. Recent versions expose design intent distinctions (part/assembly/hybrid); inspect `Design.designIntent` and its valid transitions if component creation is restricted. Do not silently change intent on a populated user model.
 
-Use explicit component objects as owners. Activating a component in the UI is not a substitute for verifying which component receives a sketch or feature.
+Use explicit component objects as owners: `component.sketches` and `component.features` can create geometry without activating that component. `Design.activeComponent` and `activeOccurrence` are read-only; `Occurrence.activate()` changes the UI edit target, not ownership. For cross-component inputs, read `Sketches.add(..., occurrenceForCreation)` and the feature input's `creationOccurrence`: a non-root destination using geometry from another component can require that occurrence context. Explicit ownership does not remove these transform/context requirements.
 
 ### Observed native-modeling pitfalls
 
@@ -71,11 +71,19 @@ If bulk sketch creation benefits from deferred computation, read `Sketch.isCompu
 
 For imported/projected sketches, inspect construction status, coincidence, duplicates, open endpoints, and tiny gaps before assuming a closed profile. Use the current projection API (`project2` in the audited version) rather than copying a retired method blindly. Read its linking behavior; projected geometry can introduce external dependencies.
 
+### Ellipse centers, radii, and orientation
+
+`SketchEllipses.add(centerPoint, majorAxisPoint, point)` accepts a `SketchPoint` center. A report that passing `sketch.originPoint` creates a distinct center remains unverified; different `entityToken` strings do not establish different entities.
+
+- Compare `ellipse.centerSketchPoint == sketch.originPoint` using Fusion API equality, not Python `is` or token-string equality. Keep both objects in the same native/proxy context. For stored tokens, use `Design.findEntityByToken`, validate the returned entities/cardinality, then compare objects. Equal coordinates prove neither shared identity nor a persistent constraint.
+- If the center is distinct, inspect `geometricConstraints` and existing anchoring before `addCoincident(center, origin)`. `CoincidentConstraint.point` and `.entity` identify its participants. Do not add duplicate coincidence or redundant concentricity when both ellipses are already anchored at the same center.
+- Use `SketchDimensions.addEllipseMajorRadiusDimension(ellipse, textPoint, isDriving=True)` and `addEllipseMinorRadiusDimension` for driving radii; full-axis parameters need half-length expressions. Constrain orientation through `ellipse.majorAxisLine` when appropriate, checking for `None` and existing constraints first. Initial axis-point coordinates alone do not constrain orientation.
+
 ### Reusable driven-rectangle example
 
 This complete helper shows enduring parameter relationships without relying on implicit rectangle constraints. The caller must first resolve an authorized target component and two positive length user parameters in the same design. It creates a new sketch in that component; it is not an inspection helper. Include it in a script with the normal `run` entry point and document guards.
 
-The helper is API-reviewed and syntax-checked, but its construction and solver behavior were not executed during skill validation. Read the current members before using it on a live model. If it fails after creation starts, inspect the partial sketch before retrying.
+The helper is API-reviewed and syntax-checked, but its construction and solver behavior were not executed during skill validation. Read the current members before using it on a live model. On failure, first probe committed/rolled-back state in a separate read-only call; do not assume a partial sketch survived. Follow [verification and recovery](verification-and-recovery.md) before retrying or undoing.
 
 ```python
 import adsk.core
@@ -125,14 +133,12 @@ def create_driven_rectangle(component, width_parameter, length_parameter):
         raise RuntimeError("Could not create driving dimensions.")
     width_dimension.parameter.expression = width_parameter.name
     length_dimension.parameter.expression = length_parameter.name
-    if sketch.healthState != adsk.fusion.FeatureHealthStates.HealthyFeatureHealthState:
-        raise RuntimeError("Rectangle sketch is not healthy.")
-    if not sketch.isFullyConstrained or sketch.profiles.count != 1:
-        raise RuntimeError("Expected one fully constrained rectangular region.")
+    if sketch.profiles.count != 1:
+        raise RuntimeError("Expected one rectangular region before extrusion.")
     return sketch
 ```
 
-The returned sketch has exactly one verified profile, so it can feed the extrusion pattern below. Keep the parameter expressions and resulting dimensions in the verification report. Other profiles need their own geometric and constraint logic; do not force every shape into a rectangle helper.
+The returned sketch has exactly one profile, so it can feed the extrusion pattern below. Retain this selection gate and creation checks; verify health, full constraint status, parameter expressions, and resulting dimensions in a separate read-only acceptance check. Other profiles need their own geometric and constraint logic; do not force every shape into a rectangle helper.
 
 ## Select profiles deliberately
 
@@ -140,9 +146,60 @@ Sketches may contain multiple regions, islands, and nested loops. Select by expe
 
 Using `profiles.item(0)` is acceptable when a freshly created sketch has been verified to contain exactly one desired profile. Otherwise inspect candidates and assert a unique selection. Distinguish single `Profile` from `ObjectCollection` inputs and satisfy coplanarity requirements.
 
+### Reusable annulus selector
+
+Two strictly nested, nonintersecting ellipses with no other region-splitting geometry produce two regions: an inner disk and an annulus, not a third full outer disk. For semiaxes in cm, their areas are `pi * ai * bi` and `pi * (ao * bo - ai * bi)`. Concentricity alone does not prove nesting. Neither profile order, shared centroid, nor choosing the larger area reliably identifies the annulus.
+
+This read-only helper selects one outer loop plus one inner loop with the expected area. Supply an absolute tolerance in cm² consistent with the requested calculation accuracy (`VeryHighCalculationAccuracy` is documented as ±0.01%; the default is ±1%). Its selection logic was checked with test doubles, not live Fusion geometry; the API calls were documentation-reviewed.
+
+```python
+import math
+import adsk.fusion
+
+def select_annulus(sketch, expected_area_cm2, area_tolerance_cm2,
+                   matches_source=None):
+    if not math.isfinite(expected_area_cm2) or expected_area_cm2 <= 0:
+        raise ValueError("Expected annulus area must be finite and positive.")
+    if not math.isfinite(area_tolerance_cm2) or area_tolerance_cm2 < 0:
+        raise ValueError("Area tolerance must be finite and nonnegative.")
+    if sketch.isComputeDeferred:
+        raise RuntimeError("Restore sketch computation before selecting profiles.")
+    matches = []
+    for profile in sketch.profiles:
+        loops = profile.profileLoops
+        if loops.count != 2 or sum(loops.item(i).isOuter for i in range(2)) != 1:
+            continue
+        if matches_source is not None and not matches_source(profile):
+            continue
+        area = profile.areaProperties(
+            adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy
+        ).area
+        if abs(area - expected_area_cm2) <= area_tolerance_cm2:
+            matches.append(profile)
+    if len(matches) != 1:
+        raise RuntimeError(f"Expected one annulus candidate; found {len(matches)}.")
+    return matches[0]
+```
+
+Area and loop count do not prove ellipse shape, concentricity, or source identity. Omit `matches_source` only for a controlled sketch whose intended contours are already verified. For mixed/imported sketches, supply a read-only predicate that checks `ProfileLoop.profileCurves` and `ProfileCurve.sketchEntity` against the intended source entities using API equality in consistent context. Do not assume one profile segment per source curve or use token-string equality. Keep the unique-selection failure before any dependent mutation.
+
 ## Feature construction pattern
 
 Use the feature collection's `createInput`, configure the input, then `add`. Read both input and feature documentation. Input setters before creation can differ from setters on an existing feature.
+
+### Typed contracts and common mismatches
+
+The following were checked against live documentation and installed Python definitions in the 2026-10-20 audit, not by constructing features. Binding type errors are clues to re-read the exact contract, not proof of undocumented coercions or a rule for every collection-taking API.
+
+| Member | Python contract / correction |
+|---|---|
+| `CircularPatternFeatureInput.quantity`, `.totalAngle` | `ValueInput`, not raw numbers; quantity is unitless, angle should carry explicit units. |
+| `ExtrudeFeatureInput.participantBodies` | `list[BRepBody]`, e.g. `[target_body]`, not `ObjectCollection`; applies to Cut/Intersect. |
+| `Matrix3D.translation` | `Vector3D`; start from `Matrix3D.create()`. `createTranslation` is absent from the audited binding. |
+| `BRepBody.healthState` | Absent from the audited binding; inspect feature/sketch health and body validity, solidity, and topology separately. |
+| `BRepEdge.isParametric` | Absent from the audited binding; inspect the relevant feature/design context instead. |
+
+### Extrusion fragment
 
 This current-style extrusion fragment assumes `component` and a verified `profile` were resolved, and `part_thickness` exists. It is API-reviewed guidance, not an executed mutation test:
 
@@ -151,9 +208,13 @@ extrudes = component.features.extrudeFeatures
 feature_input = extrudes.createInput(
     profile, adsk.fusion.FeatureOperations.NewBodyFeatureOperation
 )
+if feature_input is None:
+    raise RuntimeError("Could not create extrusion input.")
 extent = adsk.fusion.DistanceExtentDefinition.create(
     adsk.core.ValueInput.createByString("part_thickness")
 )
+if extent is None:
+    raise RuntimeError("Could not create extrusion extent.")
 if not feature_input.setOneSideExtent(
     extent, adsk.fusion.ExtentDirections.PositiveExtentDirection
 ):
@@ -166,7 +227,11 @@ feature.name = "Base thickness"
 
 Verify the current members before use. Extend the fragment with task-specific guards, semantic names, feature/body output checks, and health reporting.
 
-Choose `NewBody`, `Join`, `Cut`, or `Intersect` according to intent. For cuts/joins in multibody contexts, inspect participant-body settings and constrain affected bodies when supported. Do not rely on whatever bodies happen to intersect in the active component. Extent direction follows the sketch normal, not a screen direction. Prefer a to-object or through-all extent when that dependency is intended; a guessed large distance can cut unrelated geometry.
+Choose `NewBody`, `Join`, `Cut`, or `Intersect` according to intent. Extrude/revolve `participantBodies` applies to Cut/Intersect, not Join; set intended targets explicitly in multibody contexts. A participant list limits affected bodies but does not prove the desired intersection or remaining wall thickness. Extent direction follows the sketch normal, not a screen direction. Prefer a to-object or through-all extent when that dependency is intended; a guessed large distance can cut unrelated geometry.
+
+`ExtrudeFeatureInput.setSymmetricExtent(distance, True)` uses the **full length**: a `ValueInput` of `"4 mm"` extends 2 mm each way. With `False`, it extends 4 mm each way. This is axial extrusion extent, not automatically groove depth into the part; depth depends on sketch placement, section geometry, and intersection. A circumferential groove may need a revolved cut rather than a symmetric extrusion. Verify the intended cut and avoid breakthrough.
+
+For finishing, distinguish [surface normals from outward face normals](geometry-and-assemblies.md#surface-normals-are-not-necessarily-outward-face-normals) and verify the intended side; a healthy fillet can still affect the wrong edge. After a roundover, reacquire topology and distinguish the next sharp edge from a [tangent boundary](geometry-and-assemblies.md#tangent-boundaries-after-fillets). A fillet failure alone does not diagnose tangency.
 
 ## Recipe map
 
@@ -185,6 +250,17 @@ Choose `NewBody`, `Join`, `Cut`, or `Intersect` according to intent. For cuts/jo
 | Split part or cavity | Split/combine with explicit tool/target bodies | `SplitBodyFeatures`, `CombineFeatures`; retained tool bodies and connected volumes |
 
 Feature/member availability changes; these are discovery targets, not a promise that every exact API is installed. Read the advanced-modeling reference when the intended representation requires another route.
+
+### Turned, furniture, and decorative multibody parts
+
+For a turned pedestal, elliptical tabletop/frame, or decorative assembly, use this API-reviewed sequence; it was not exercised as a live construction test. Name features when created, and final task-owned bodies after finishing:
+
+1. Define heights, radial dimensions, and elliptical semiaxes as parameters. Use components for distinct manufactured parts; keep multiple bodies in one component only when that matches intent. Do not merge furniture parts merely because they touch.
+2. For a turned form, build a section with lines/arcs or a fitted spline on one side of the axis. Close it with nonconstruction boundary lines using the actual `SketchFittedSpline.startSketchPoint` and `.endSketchPoint` via `SketchLines.addByTwoPoints`. Add connectors to the axis as needed; verify a closed, non-self-intersecting profile. Setting `spline.isClosed = True` instead makes the spline periodic and is not equivalent to closing the section to an axis. A full revolve uses `RevolveFeatureInput.setAngleExtent(False, ValueInput.createByString("360 deg"))`; symmetric revolve angles are per-side. Fitted-spline forms may intentionally remain underconstrained; report the intended remaining freedoms rather than fixing all geometry merely to force `isFullyConstrained`.
+3. Build an elliptical top or frame from constrained ellipses and the verified disk/annulus profile, then extrude the intended thickness. Add trim, feet, or repeated ornaments as the intended bodies/components rather than accidental joins.
+4. Cut the specified groove with explicit target selection and create its decorative inlay as a separate, clearance-fitted body rather than joining it to the host. Verify the actual minimum gap at the intended clearance interfaces against the requested fit, as well as absence of interference. Subtracting the same amount from ellipse semiaxes is not a uniform curve offset and does not establish that gap.
+5. Apply finishing features and assign material only within the requested scope: `BRepBody.material` and `Component.material` have different scopes, and `appearance` is not physical material. Do not recolor or change material on unrelated parts.
+6. After finishing, resolve final bodies by ownership and geometry, assign semantic names to task-owned outputs, and read them back in separate read-only verification. Body-name loss after later operations has been reported but was not tested in this audit; do not treat names as durable identity or broadly rename existing user bodies.
 
 ## Holes, threads, and patterns
 

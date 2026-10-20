@@ -13,7 +13,7 @@ The MCP is a small gateway to a large application: most CAD creation, measuremen
 
 1. Read the current Fusion tool definitions. Discover deferred tools if necessary; their names currently start with `mcp__fusion__fusion_mcp_`.
 2. Read [MCP operation and scripting](references/mcp-and-scripting.md) for discovery, responses, document identity, execution, and observed integration quirks.
-3. Read open documents and the active command. Inspect the relevant model structure. The bundled [inspection script](scripts/inspect_design.py) runs inside Fusion with `readOnly: true`.
+3. Read open documents and the active command. Use the compact [state probe](scripts/state_probe.py) for before/after fingerprints or the detailed [inspector](scripts/inspect_design.py) for relevant model structure. Both run inside Fusion with `readOnly: true`.
 4. Select the reference below. Load only relevant references and exact live API members.
 5. Choose a feature sequence, implement the authorized work, verify it, and deliver the result. When the user requested a Fusion model, do not stop at a proposed script.
 
@@ -32,7 +32,7 @@ The MCP is a small gateway to a large application: most CAD creation, measuremen
 
 Distinguish a new design, an addition to the current design, an edit to existing features, inspection, and export. A new-object request does not imply erasing the current model. A dimension edit usually calls for changing its controlling parameter or feature instead of replacing the body.
 
-Extract units, dimensions, orientation, part count, interfaces, fit requirements, manufacturing intent, and deliverables from the request and model. Resolve routine implementation choices autonomously. Ask only for missing information that materially changes geometry, function, or destination; inspect first when the model can answer it. State reasonable assumptions for a concept model. Do not invent a critical mating dimension, thread standard, or tolerance.
+Extract units, dimensions, orientation, part count, interfaces, fit requirements, manufacturing intent, and deliverables from the request and model. Resolve routine implementation choices autonomously. Ask only for missing information that materially changes geometry, function, or destination; inspect first when the model can answer it. State reasonable assumptions for a concept model, including ergonomic dimensions such as furniture height; measure and report the resulting overall bounds. Do not invent a critical mating dimension, thread standard, or tolerance.
 
 Use existing authorization. Do not introduce an approval gate for every sketch, feature, or script. Follow actual tool requirements for saving, closing unsaved documents, purchases, and other consequential actions. For a request explicitly limited to inspection/no edits, use read-only scripts and preserve model, timeline, selection, workspace, and command state. Creating an explicitly requested report is a separate authorized file operation.
 
@@ -57,7 +57,8 @@ A hole feature, modeled thread, patterned component, and mesh body carry differe
 - Read exact classes and members before generating the script. Class summaries may omit inherited properties. Broad searches were observed to return only five results without a truncation flag; use precise symbols.
 - Define `run(_context: str)` and let exceptions reach the MCP. Print compact structured results.
 - Keep scripts to coherent modeling stages when partial failure would be hard to locate. Reuse returned objects and resolve tokens with ownership and geometric checks.
-- Guard document and target before mutation. Validate dimensions and selection cardinalities before adding geometry. Inspect partial state before retrying a failed stage.
+- Guard document and target before mutation. Keep critical input, selection, and creation checks inside the stage. Whole-call rollback after uncaught exceptions has been observed; first probe whether anything committed before looking for partial state or retrying.
+- End completed mutation stages with compact state reports, then run independent final acceptance checks in a separate read-only call. Do not swallow exceptions or remove safety gates needed by subsequent edits.
 - Run dependent operations sequentially. Do not execute simultaneous mutation scripts against the shared Fusion session.
 
 ### Verify and deliver
@@ -70,7 +71,7 @@ Report what changed, supporting measurements or checks, material limitations, an
 
 - CAD internal length is centimeters and angles are radians. Millimeter display units do not change this. Prefer unit-bearing expressions and explicit conversion. Electronics has a separate grid-unit convention.
 - Component definitions, occurrence instances, native objects, and assembly proxies have different contexts. Repeated occurrences share a definition.
-- Collection order is not design intent. Select profiles, faces, and edges by geometry and ownership; assert the expected number of candidates.
+- Collection order is not design intent. Select profiles, faces, and edges by geometry and ownership; assert the expected number of candidates. Underlying surface normals can oppose oriented face normals; a healthy fillet can still affect the wrong side.
 - Token strings can change, and an old face token can resolve to multiple faces after a split. Temporary topology IDs expire when their body changes.
 - Switching parametric to direct design can remove history. Some feature edits require rolling the timeline immediately before the feature and restoring the intended position afterward.
 - Unhealthy, underconstrained, suppressed, and rolled-back are different conditions.
@@ -83,7 +84,9 @@ Read `scripts/inspect_design.py` and send its source as `object.script` to `fusi
 
 Adjust its constants in the submitted source for document guards, pagination, and geometry detail. It reports identity, product types, units, counts, parameters, occurrence transforms, and health. It never saves, recomputes, changes the camera, or moves the timeline. Detail pages report their total and whether more rows exist. Body counts cover native definitions, not assembly quantities.
 
-For a misplaced assembly member, compare its occurrence transform with its actual geometry. The inspector includes pin state; enable `INCLUDE_PART_NUMBERS` for catalog identifiers and `INCLUDE_OCCURRENCE_BOUNDS` for bounds in occurrence assembly context. Leave these optional reads off when a structural read is sufficient; part-number getters can be much slower than names.
+For a misplaced assembly member, compare its occurrence transform with its actual geometry. The inspector includes pin state; enable `INCLUDE_PART_NUMBERS` for catalog identifiers and `INCLUDE_OCCURRENCE_BOUNDS` for bounds in occurrence assembly context. Missing/invalid/point-like occurrence boxes trigger a labeled conservative fallback from transformed native B-Rep boxes, with descendant coverage and missing/excluded geometry counts. A zero box does not prove an empty part. Leave these optional reads off when a structural read is sufficient; part-number getters can be much slower than names.
+
+For quick transaction-state checks, submit `scripts/state_probe.py` the same way. It reports identity, command ID, saved/modified flags, native-definition/body counts, occurrences, user parameters, and timeline count/marker. Set its document guards from live context. Counts include the root component and are a fingerprint, not proof that geometry is unchanged.
 
 Use targeted reads for large assemblies or small edits; running a full inspector is not mandatory every time.
 
@@ -94,5 +97,7 @@ The initial audit on 2026-10-13 used Fusion reporting version `2705.1.30`. Read-
 Work on 2026-10-19 also exercised supplier STEP assemblies, body-move repair, component pinning, native/STEP/DXF/STL exports, and mesh scale/closedness checks. These observations support the specific guidance in the references; CAM, other advanced operations, engineering performance, and media handoffs still require their own verification.
 
 A read-only test also verified temporary BRep transforms and Boolean intersections on synthetic boxes without changing document state. It did not validate assembly travel. Native add-in controls and custom graphics guidance is documentation-based, not an exercised add-in implementation.
+
+The 2026-10-20 review checked typed inputs and camera/appearance/ellipse contracts against live API documentation and installed bindings. Read-only tests reproduced reversed surface normals on a temporary box, ran the state probe, and checked conservative bounds against body proxies for five live occurrences without changing the recorded document state. Local mocked tests cover rotated/nested bounds, unavailable geometry, and probe guards. Whole-call rollback, immediate zero occurrence boxes, ellipse-center behavior, and body-name loss from the table build remain session reports, not newly reproduced mutation tests.
 
 Never carry model names, file IDs, license state, or selections from another chat into a new task. Begin with live context.

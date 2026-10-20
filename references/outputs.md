@@ -52,6 +52,27 @@ An outline-and-drill DXF does not communicate all of a plate's machining require
 
 The audited `Sketch.saveAsDXF` member was marked retired. Discover the supported export-manager or current sketch route instead of copying it into new automation. A manually projected outline is not a true sheet-metal flat pattern.
 
+## Model appearances
+
+For an actual model finish, read the available `Application.materialLibraries` and the chosen library's `appearances`, then use exact discovered names. Names are localized, and appearance names need not be unique; resolve ambiguity to a verified entry rather than assuming a name identifies one. Names such as `Fusion Appearance Library` and `Oak - Semigloss` were found in one session, not guaranteed for every installation.
+
+This helper takes a previously validated native body and unambiguous discovered names. Both lookups must succeed before assignment: accidentally assigning a missing appearance (`None`) would clear an existing body override.
+
+```python
+def apply_body_appearance(app, body, library_name, appearance_name):
+    library = app.materialLibraries.itemByName(library_name)
+    if library is None:
+        raise ValueError(f"Appearance library not found: {library_name}")
+    appearance = library.appearances.itemByName(appearance_name)
+    if appearance is None:
+        raise ValueError(f"Appearance not found in {library_name}: {appearance_name}")
+    body.appearance = appearance
+```
+
+The documented `BRepBody.appearance` setter does not require an explicit copy into the design first; direct library assignment is consistent with that contract but was not mutation-tested in this audit. For a deliberately named/design-owned copy, optionally use `design.appearances.addByCopy(appearance, copy_name)`, check its result for `None`, then assign the copy. Autodesk's [Material API Sample](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/MaterialSample_Sample.htm) demonstrates copy-first, not a mandatory-copy rule. Do not promise undocumented automatic-copy behavior.
+
+Setting `body.appearance = None` intentionally removes only that body's override. A native body belongs to a shared component definition, so its appearance affects that definition across occurrences; face or occurrence overrides may affect the visible result. Do not silently clear those other overrides. An appearance assignment changes visual finish, not `body.material` or density; see [Materials and appearances](advanced-modeling.md#materials-and-appearances). Verify the assigned appearance/source and relevant instance/face display, not just script success. Assignment and `addByCopy` are model mutations, never `readOnly: true` inspection.
+
 ## Screenshots and camera
 
 ```json
@@ -60,9 +81,48 @@ The audited `Sketch.saveAsDXF` member was marked retired. Discover the supported
 
 `current` preserves the viewing direction. Other directions instruct the tool to change the camera before capture. Use them during authorized visual review when appropriate; use `current` for an inspection that must preserve UI state. Do not state the camera was preserved if a standard view was requested.
 
+A direction such as `iso-top-right` specifies orientation, not a documented fit guarantee. Set up a fitted camera explicitly when framing matters, then capture with `direction: "current"` so the screenshot request does not replace that orientation.
+
 Screenshots show the graphics viewport, not necessarily the whole Fusion UI or feature tree. Use active-command reads for dialog state and API reads for model structure. Image blocks can be displayed directly; do not expose base64 strings.
 
 When saving a viewport immediately after a camera change, a smooth transition can capture an intermediate view. For a deterministic scripted capture, set `camera.isSmoothTransition = False`, assign the intended camera/fit, refresh the viewport, and inspect the resulting image.
+
+`viewport.camera` returns a copy; changing it has no viewport effect until assigned back. `camera.isFitView = True` requests fitting the entire model when that assignment happens, not a crop to selected bodies. For this helper, obtain bounds in root/world coordinates (for example, the current `design.rootComponent.boundingBox`), and choose target-to-eye and up directions from the intended model orientation. Do not pass a nested component's local bounds as world bounds or reuse eye/target coordinates from another model.
+
+```python
+import adsk.core
+
+
+def fit_orthographic(viewport, world_bounds, eye_direction, up_direction):
+    low, high = world_bounds.minPoint, world_bounds.maxPoint
+    distance = low.distanceTo(high)
+    direction, up = eye_direction.copy(), up_direction.copy()
+    if distance <= 0 or not direction.normalize() or not up.normalize():
+        raise ValueError("Nonzero model bounds and camera directions are required.")
+    if direction.crossProduct(up).length < 1e-9:
+        raise ValueError("Camera eye and up directions must not be parallel.")
+    target = adsk.core.Point3D.create(
+        (low.x + high.x) / 2, (low.y + high.y) / 2, (low.z + high.z) / 2
+    )
+    camera = viewport.camera
+    camera.cameraType = adsk.core.CameraTypes.OrthographicCameraType
+    camera.target = target
+    camera.eye = adsk.core.Point3D.create(
+        target.x + distance * direction.x,
+        target.y + distance * direction.y,
+        target.z + distance * direction.z,
+    )
+    camera.upVector = up
+    camera.isSmoothTransition = False
+    camera.isFitView = True
+    viewport.camera = camera
+    if not viewport.refresh():
+        raise RuntimeError("Camera was assigned, but viewport refresh failed.")
+```
+
+Call helpers from `run(_context: str)` only after document/target validation and authorization for the changes. Camera application, viewport refresh, and non-current screenshot directions change UI state: do not perform them in a `readOnly: true` script or a preserve-UI inspection. The camera helper is documentation-based, not live mutation-tested here.
+
+The installed `Camera.viewExtents` documentation explicitly marks it retired, replaced by `getExtents()` and `setExtents(width, height)`. Those methods apply only to orthographic cameras and use width/height in centimeters; use `isFitView` for automatic fitting rather than copying old `viewExtents` examples. Recheck exact current contracts when implementing manual framing.
 
 Use views that make the requested result reviewable: silhouette, relevant interfaces, hole placement, or assembly arrangement. A view is supporting evidence, not a dimensional inspection.
 

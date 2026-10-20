@@ -45,7 +45,7 @@ Find a class, then read exact members:
 {"queryType":"apiDocumentation","apiCategory":"member","filter":"adsk.fusion.ExtrudeFeatures","searchPattern":"^createInput$"}
 ```
 
-For an unknown method name, search descriptions in a likely class:
+For an unknown method name, optionally search descriptions in a likely class, then query exact returned members:
 
 ```json
 {"queryType":"apiDocumentation","apiCategory":"description","filter":"adsk.fusion.Occurrence","searchPattern":"orientation|position"}
@@ -56,12 +56,12 @@ For an unknown method name, search descriptions in a likely class:
 - `success: true` with no classes/members means no match. It does not prove the product lacks a capability.
 - Query base classes for inherited properties: `Component` -> `BaseComponent`, `UserParameter` -> `Parameter`, `Design` -> `Product`.
 - Enums can be found using the class category. Read their attributes for exact constant names.
-- A `(*args)` signature is incomplete by itself. Read the full description; use current official Autodesk documentation if the MCP is insufficient.
+- A `(*args)` signature is incomplete by itself. Description search is discovery, not a full-signature guarantee: searching `setSymmetricExtent` prose still returned `(*args)` during the audit. Read parameter prose and current official documentation; when necessary, inspect installed Python getter/setter annotations in a read-only script. Those annotations supplied property types omitted by MCP summaries, but are not a substitute for behavioral preconditions.
 - Generated signatures can disagree with the member prose. A forward test found `DistanceExtentDefinition.create` advertising `ValueInput` as its return type while its description correctly specified `DistanceExtentDefinition`. Resolve such conflicts against the exact member, returned class, and official documentation; check the actual returned object before using it to add a feature.
 - Prefer supported APIs to preview, retired, or unofficial calls. Do not use `internalCommand` or undocumented text commands merely because they appear in discovery.
 - Namespace-wide dumps hit the result limit and wrapper classes; they do not inventory the API.
 
-If web research is necessary, use official Autodesk Fusion API documentation and samples. Check old samples for retired calls. Reconcile them against the installed member contract.
+If web research is necessary, use official Autodesk Fusion API documentation and samples. Check old samples for retired calls. Reconcile them against the installed member contract. Treat binding errors as clues to inspect exact types: `std::vector<Ptr<...>>` on the audited `ExtrudeFeatureInput.participantBodies` points to its Python `list[BRepBody]` contract, while `Ptr<ValueInput>` on the audited circular-pattern inputs points to a `ValueInput`, not a raw number. These are contract-specific clues, not universal collection coercion rules; see the [modeling contract table](modeling.md#typed-contracts-and-common-mismatches).
 
 ## Documents and identity
 
@@ -76,6 +76,8 @@ Observed issue: an open-document response's encoded `parentProjectId` was reject
 Unsaved documents may have no cloud ID. Guard saved documents by observed `dataFile.id` when available. For unsaved documents combine observed name, `creationId`, and current context. Creation IDs can be shared by copied documents, so they are not globally unique identity proof. Resolve remaining ambiguity before mutation.
 
 Recheck active document before meaningful changes. Separate calls may be interrupted by user activity. A model name left in a sample is never a valid guard for another task.
+
+For entity identity, never compare `entityToken` strings. `Design.findEntityByToken` can return zero, one, or multiple entities; validate type, ownership, and cardinality before comparing resolved objects with API `==`, not Python `is`. Keep native/proxy context consistent. Native equality identifies a component-definition entity, not a particular instance of a repeated component.
 
 ## Script contract
 
@@ -111,7 +113,11 @@ Use `readOnly: true` only for true inspection. Creating, setting, deleting, reco
 
 Let exceptions propagate. Do not copy the common sample wrapper `try/except: ui.messageBox(...)`; it hides errors from the MCP and interrupts the user. A `finally` block may restore task-owned temporary state during an authorized edit while allowing the original exception to escape. Avoid broad exception suppression for optional fields; instead inspect documented capabilities and omit unsupported branches explicitly.
 
-Build and validate feature input objects before adding features. Check false/null returns. Print names, expressions, counts, measurements with units, relevant tokens, and health. Do not print wrapper objects, secrets, entire material libraries, or huge topology dumps.
+Build and validate feature input objects before adding features. Retain critical document/target guards, unique-selection checks, false/null creation checks, and invariants needed for safe subsequent mutations. Do not move these safety gates out of a construction stage merely because they can raise an exception.
+
+Put independent final acceptance checks in a separate `readOnly: true` call: requested dimensions, overall health, constraint status, final body counts, and name/material readback when no remaining mutation depends on them. A script exception does not by itself establish either rollback or surviving partial geometry. First probe committed/rolled-back state read-only, then follow [verification and recovery](verification-and-recovery.md) before retrying or undoing; do not blindly repeat creation or undo the user's preceding operation.
+
+Print names, expressions, counts, measurements with units, relevant tokens, and health. Do not print wrapper objects, secrets, entire material libraries, or huge topology dumps.
 
 ## Slow reads and request timeouts
 

@@ -5,6 +5,7 @@ Counts cover native definitions; occurrences represent assembly instances.
 """
 
 import json
+import math
 from collections import Counter
 import adsk.core
 import adsk.fusion
@@ -58,6 +59,106 @@ def health_name(state):
 
 def health_message(obj, health):
     return obj.errorOrWarningMessage if health in ("warning", "error") else ""
+
+
+def box_limits(box):
+    """Reject absent, nonfinite, inverted, or point-like boxes, not planar boxes."""
+    if box is None:
+        return None
+    low, high = list(box.minPoint.asArray()), list(box.maxPoint.asArray())
+    if not all(math.isfinite(v) for v in low + high):
+        return None
+    if any(high[k] < low[k] for k in range(3)) or low == high:
+        return None
+    return low, high
+
+
+def definition_bounds_in_context(occ):
+    """Conservative B-Rep bounds; child proxies retain the supplied assembly context."""
+    low, high = None, None
+    included = missing = meshes = 0
+    pending = [occ]
+    while pending:
+        current = pending.pop()
+        component = current.component
+        meshes += component.meshBodies.count
+        transform = current.transform2
+        for i in range(component.bRepBodies.count):
+            bounds = box_limits(component.bRepBodies.item(i).preciseBoundingBox)
+            if bounds is None:
+                missing += 1
+                continue
+            native_low, native_high = bounds
+            # Transform all eight native corners exactly once, not just min/max.
+            for x in (native_low[0], native_high[0]):
+                for y in (native_low[1], native_high[1]):
+                    for z in (native_low[2], native_high[2]):
+                        point = adsk.core.Point3D.create(x, y, z)
+                        if not point.transformBy(transform):
+                            raise RuntimeError("Could not transform a bounds corner.")
+                        values = list(point.asArray())
+                        if not all(math.isfinite(v) for v in values):
+                            raise RuntimeError("Transformed bounds are nonfinite.")
+                        low = (
+                            values[:]
+                            if low is None
+                            else [min(low[k], values[k]) for k in range(3)]
+                        )
+                        high = (
+                            values[:]
+                            if high is None
+                            else [max(high[k], values[k]) for k in range(3)]
+                        )
+            included += 1
+        children = current.childOccurrences
+        pending.extend(children.item(i) for i in range(children.count))
+    return (None if low is None else (low, high)), {
+        "bounds_brep_bodies_included": included,
+        "bounds_brep_bodies_missing": missing,
+        "bounds_mesh_bodies_excluded": meshes,
+    }
+
+
+def occurrence_bounds(occ, units):
+    limits = box_limits(occ.boundingBox)
+    row = {"bounds_frame": "occurrence assembly context"}
+    if limits is not None:
+        row.update(
+            {
+                "bounds_status": "reported",
+                "bounds_source": "Occurrence.boundingBox",
+                "bounds_scope": "API occurrence bounds; not guaranteed tight",
+            }
+        )
+    else:
+        limits, summary = definition_bounds_in_context(occ)
+        row.update(summary)
+        row.update(
+            {
+                "bounds_status": (
+                    "unavailable"
+                    if limits is None
+                    else (
+                        "partial_fallback"
+                        if summary["bounds_brep_bodies_missing"]
+                        else "fallback"
+                    )
+                ),
+                "bounds_source": "transformed_native_brep_boxes",
+                "bounds_scope": "B-Rep bodies and descendants; excludes meshes and other geometry",
+                "bounds_is_conservative": True,
+                "bounds_warning": (
+                    "API occurrence box was absent, invalid, or point-like. "
+                    "This does not prove the occurrence is empty. "
+                    "Transformed definition boxes may overestimate rotated geometry."
+                ),
+            }
+        )
+    if limits is not None:
+        low, high = limits
+        row["bounds_min_mm"] = [units.convert(v, "cm", "mm") for v in low]
+        row["bounds_max_mm"] = [units.convert(v, "cm", "mm") for v in high]
+    return row
 
 
 def inspect_design():
@@ -222,11 +323,7 @@ def inspect_design():
             row["part_number"] = occ.component.partNumber
         row["is_grounded"] = occ.isGrounded
         if INCLUDE_OCCURRENCE_BOUNDS:
-            box = occ.boundingBox
-            if box:
-                row["bounds_frame"] = "occurrence assembly context"
-                row["bounds_min_mm"] = [units.convert(v, "cm", "mm") for v in box.minPoint.asArray()]
-                row["bounds_max_mm"] = [units.convert(v, "cm", "mm") for v in box.maxPoint.asArray()]
+            row.update(occurrence_bounds(occ, units))
         occurrence_rows.append(row)
     parameters = design.allParameters
     parameter_rows = []
